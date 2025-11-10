@@ -1,0 +1,73 @@
+version: '3.9'
+
+services:
+  github-runner:
+    build:
+      context: ../docker
+      dockerfile: Dockerfile
+      args:
+        RUNNER_VERSION: ${RUNNER_VERSION:-2.329.0}
+    
+    container_name: ${RUNNER_NAME:-github-runner}
+    
+    restart: unless-stopped
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '${CPU_LIMIT:-2.0}'
+          memory: ${MEMORY_LIMIT:-4g}
+        reservations:
+          cpus: '${CPU_RESERVATION:-0.5}'
+          memory: ${MEMORY_RESERVATION:-1g}
+    
+    # Environment variables
+    environment:
+      - GITHUB_APP_ID=${GITHUB_APP_ID}
+      - GITHUB_APP_INSTALLATION_ID=${GITHUB_APP_INSTALLATION_ID}
+      - GITHUB_APP_PRIVATE_KEY_PATH=${GITHUB_APP_PRIVATE_KEY_PATH}
+      - GITHUB_PAT=${GITHUB_PAT:-}
+      - REPO_URL=${REPO_URL}
+      - RUNNER_NAME=${RUNNER_NAME}
+      - LABELS=${LABELS:-self-hosted,linux,x64,docker}
+      - RUNNER_GROUP=${RUNNER_GROUP:-}
+      - DISABLE_AUTO_UPDATE=${DISABLE_AUTO_UPDATE:-true}
+      - DEBUG=${DEBUG:-false}
+    
+    # Volumes
+    volumes:
+      # Private key (read-only)
+      - ${GITHUB_APP_PRIVATE_KEY_PATH}:${GITHUB_APP_PRIVATE_KEY_PATH}:ro
+      
+      # Runner workspace (persistent)
+      - runner-work:/home/runner/actions-runner/_work
+      
+      # Docker socket (for Docker-in-Docker)
+      - /var/run/docker.sock:/var/run/docker.sock
+    
+    # Network
+    network_mode: ${NETWORK_MODE:-bridge}
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "Runner.Listener"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "${LOG_MAX_SIZE:-10m}"
+        max-file: "${LOG_MAX_FILES:-3}"
+
+volumes:
+  runner-work:
+    driver: local
+
+networks:
+  default:
+    name: ${NETWORK_NAME:-github-runner-net}
