@@ -1,0 +1,111 @@
+version: "1.0"
+name: "runner-config"
+description: "Schema for GitHub Self-Hosted Runner configuration"
+
+variables:
+  GITHUB_APP_ID:
+    type: integer
+    required: true
+    description: "GitHub App ID from app settings"
+    example: 123456
+  GITHUB_APP_INSTALLATION_ID:
+    type: integer
+    required: true
+    description: "Installation ID when app is installed"
+    example: 789012
+  GITHUB_APP_PRIVATE_KEY_PATH:
+    type: string
+    required: true
+    pattern: "^/etc/github-runner/.+\.pem$"
+    description: "Path to private key file"
+    default: "/etc/github-runner/app-key.pem"
+  REPO_URL:
+    type: string
+    required: true
+    pattern: "^https://github\.com/[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$"
+    description: "Full GitHub repository URL"
+    example: "https://github.com/acme-corp/my-project"
+  RUNNER_NAME:
+    type: string
+    required: true
+    pattern: "^[a-zA-Z0-9_-]+$"
+    description: "Unique runner name"
+    example: "docker-runner-prod"
+  LABELS:
+    type: string
+    required: false
+    default: "self-hosted,linux,x64,docker"
+    description: "Comma-separated runner labels"
+  RUNNER_WORKDIR:
+    type: string
+    required: false
+    default: "/home/runner/actions-runner/_work"
+  CPU_LIMIT:
+    type: float
+    required: false
+    default: 2.0
+    minimum: 0.1
+    maximum: 64.0
+    description: "CPU cores limit"
+  CPU_RESERVATION:
+    type: float
+    required: false
+    default: 0.5
+    minimum: 0.1
+  MEMORY_LIMIT:
+    type: string
+    required: false
+    default: "4g"
+    pattern: "^[0-9]+(b|k|m|g)$"
+    description: "Memory limit (e.g., 4g, 512m)"
+  MEMORY_RESERVATION:
+    type: string
+    required: false
+    default: "1g"
+    pattern: "^[0-9]+(b|k|m|g)$"
+  DISK_LIMIT:
+    type: string
+    required: false
+    default: "20g"
+    pattern: "^[0-9]+(g|t)$"
+  ENABLE_DOCKER:
+    type: boolean
+    required: false
+    default: true
+  RUNNER_VERSION:
+    type: string
+    required: false
+    default: "2.329.0"
+    pattern: "^[0-9]+\.[0-9]+\.[0-9]+$"
+  CLEANUP_WORKSPACE_DAYS:
+    type: integer
+    required: false
+    default: 7
+    minimum: 1
+    maximum: 365
+  CLEANUP_DOCKER_HOURS:
+    type: integer
+    required: false
+    default: 24
+    minimum: 1
+    maximum: 8760
+  GENERATED_DATE:
+    type: string
+    computed: true
+    description: "Auto-generated timestamp"
+  TEMPLATE_VERSION:
+    type: string
+    constant: "1.0"
+validation:
+  rules:
+    - name: "cpu_reservation_less_than_limit"
+      condition: "CPU_RESERVATION < CPU_LIMIT"
+      message: "CPU_RESERVATION must be less than CPU_LIMIT"
+    - name: "memory_reservation_less_than_limit"
+      condition: "MEMORY_RESERVATION < MEMORY_LIMIT"
+      message: "MEMORY_RESERVATION must be less than MEMORY_LIMIT"
+output:
+  formats:
+    - markdown
+    - env
+    - json

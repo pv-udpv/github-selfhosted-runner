@@ -1,0 +1,25 @@
+ISSUE_TITLE: "[Bug]: Runner crashes during Docker build"
+DESCRIPTION: "Runner container exits unexpectedly when executing Docker build jobs"
+STEPS_TO_REPRODUCE: |
+  1. Deploy runner with standard config
+  2. Run workflow with Docker build step
+  3. Runner crashes after 30 seconds
+EXPECTED_BEHAVIOR: "Runner should complete Docker build successfully"
+ACTUAL_BEHAVIOR: "Runner crashes with exit code 137 (OOM killed)"
+OS: "Ubuntu 22.04"
+DOCKER_VERSION: "24.0.7"
+RUNNER_VERSION: "2.329.0"
+COMPONENT: "docker"
+LOGS: |
+  [2025-11-10 22:33:15] Building Docker image...
+  [2025-11-10 22:33:45] Fatal error: Out of memory
+  [2025-11-10 22:33:45] Container exiting...
+LOGS_FORMAT: "shell"
+CONFIGURATION: |
+  REPO_URL=https://github.com/acme/project
+  RUNNER_NAME=runner-1
+  CPU_LIMIT=2.0
+  MEMORY_LIMIT=4g
+ADDITIONAL_CONTEXT: "This only happens with large multi-stage builds"
+REPORTER: "john-doe"
+REPORT_DATE: "2025-11-10T22:33:00Z"

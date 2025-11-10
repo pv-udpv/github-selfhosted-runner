@@ -1,0 +1,77 @@
+version: "1.0"
+name: "issue-bug-report"
+description: "Schema for bug report issues"
+variables:
+  ISSUE_TITLE:
+    type: string
+    required: true
+    pattern: "^\[Bug\]: .+"
+    example: "[Bug]: Runner crashes on startup"
+  DESCRIPTION:
+    type: string
+    required: true
+    multiline: true
+    description: "Clear description of the bug"
+  STEPS_TO_REPRODUCE:
+    type: string
+    required: true
+    multiline: true
+    example: |
+      1. Deploy runner with config X
+      2. Start workflow Y
+      3. See error
+  EXPECTED_BEHAVIOR:
+    type: string
+    required: true
+    multiline: true
+  ACTUAL_BEHAVIOR:
+    type: string
+    required: true
+    multiline: true
+  OS:
+    type: string
+    required: true
+    enum: ["Ubuntu 22.04", "Ubuntu 20.04", "Debian 11", "CentOS 8", "Other"]
+    example: "Ubuntu 22.04"
+  DOCKER_VERSION:
+    type: string
+    required: true
+    pattern: "^[0-9]+\.[0-9]+\.[0-9]+$"
+    example: "24.0.7"
+  RUNNER_VERSION:
+    type: string
+    required: true
+    pattern: "^[0-9]+\.[0-9]+\.[0-9]+$"
+    example: "2.329.0"
+  COMPONENT:
+    type: string
+    required: true
+    enum: ["deployment", "docker", "authentication", "configuration", "cleanup", "other"]
+    example: "docker"
+  LOGS:
+    type: string
+    required: false
+    multiline: true
+    description: "Relevant logs"
+  LOGS_FORMAT:
+    type: string
+    required: false
+    default: "shell"
+    enum: ["shell", "bash", "json", "text"]
+  CONFIGURATION:
+    type: string
+    required: false
+    multiline: true
+    description: "Runner configuration (sanitized)"
+  ADDITIONAL_CONTEXT:
+    type: string
+    required: false
+    multiline: true
+  REPORTER:
+    type: string
+    computed: true
+    description: "GitHub username of reporter"
+  REPORT_DATE:
+    type: string
+    computed: true
+    format: "date-time"
