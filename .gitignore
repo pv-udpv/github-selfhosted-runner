@@ -1,0 +1,41 @@
+# GitHub Self-Hosted Runner
+
+# Environment files
+*.env
+!*.env.template
+
+# Private keys
+*.pem
+*.key
+*.p8
+
+# Docker
+docker-compose.override.yml
+
+# Logs
+*.log
+logs/
+
+# Runtime
+*.pid
+*.sock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+tmp/
+temp/
+*.tmp
+
+# Backup
+*.bak
+*.backup
