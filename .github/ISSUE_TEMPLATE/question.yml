@@ -1,0 +1,92 @@
+name: ❓ Question
+description: Ask a question about usage, configuration, or architecture
+title: "[Question]: "
+labels: ["question"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have a question? We're here to help! Please provide as much context as possible.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: What would you like to know?
+      placeholder: How do I...?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Question Category
+      description: What is your question about?
+      options:
+        - Installation & Setup
+        - Configuration
+        - GitHub App Authentication
+        - Deployment Strategies
+        - Troubleshooting
+        - Performance Tuning
+        - Security Best Practices
+        - Architecture & Design
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Provide context about your use case or environment
+      placeholder: |
+        - What are you trying to achieve?
+        - What have you tried so far?
+        - What documentation have you already reviewed?
+    validations:
+      required: true
+
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Current Configuration
+      description: Share relevant parts of your configuration (remove sensitive data!)
+      placeholder: |
+        REPO_URL=https://github.com/org/repo
+        RUNNER_NAME=runner-1
+        CPU_LIMIT=2.0
+      render: bash
+    validations:
+      required: false
+
+  - type: input
+    id: runner-version
+    attributes:
+      label: Runner Version
+      description: Which version are you using?
+      placeholder: "2.329.0"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: documentation
+    attributes:
+      label: Documentation Review
+      description: Have you checked the documentation?
+      options:
+        - label: I have read the README.md
+          required: false
+        - label: I have checked the docs/ folder
+          required: false
+        - label: I have searched existing issues and discussions
+          required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Information
+      description: Any other details that might help us answer your question
+    validations:
+      required: false

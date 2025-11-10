@@ -1,0 +1,120 @@
+name: 💡 Feature Request
+description: Suggest a new feature or enhancement for the GitHub Self-Hosted Runner
+title: "[Feature]: "
+labels: ["enhancement", "needs-discussion"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature! Please describe your idea in detail.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve? What pain point does it address?
+      placeholder: "I'm always frustrated when..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe your ideal solution
+      placeholder: |
+        I would like to see...
+        This would work by...
+    validations:
+      required: true
+
+  - type: textarea
+    id: example
+    attributes:
+      label: Usage Example
+      description: Show how this feature would be used
+      placeholder: |
+        # Example configuration
+        NEW_FEATURE_ENABLED=true
+        NEW_FEATURE_OPTION=value
+        
+        # Or command
+        ./scripts/new-command.sh --option value
+      render: bash
+    validations:
+      required: false
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Feature Category
+      description: Which area does this feature belong to?
+      options:
+        - Deployment & Configuration
+        - Security & Authentication
+        - Monitoring & Observability
+        - Performance & Optimization
+        - Documentation
+        - Developer Experience
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this feature to you?
+      options:
+        - Critical - Blocking my use case
+        - High - Significantly improves workflow
+        - Medium - Nice to have
+        - Low - Minor improvement
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you considered any alternative solutions or workarounds?
+      placeholder: |
+        Alternative 1: ...
+        Alternative 2: ...
+        Current workaround: ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: benefits
+    attributes:
+      label: Benefits
+      description: Who would benefit from this feature and how?
+      placeholder: |
+        - Benefit 1: ...
+        - Benefit 2: ...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: implementation
+    attributes:
+      label: Implementation Interest
+      description: Are you willing to help implement this feature?
+      options:
+        - label: I would like to implement this feature
+          required: false
+        - label: I can help test this feature
+          required: false
+        - label: I can help document this feature
+          required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context, screenshots, or references
+      placeholder: Links to similar features in other projects, mockups, etc.
+    validations:
+      required: false
