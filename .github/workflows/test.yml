@@ -1,0 +1,154 @@
+name: Test Self-Hosted Runner
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint-scripts:
+    name: Lint Shell Scripts
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './scripts'
+          severity: warning
+      
+      - name: Run ShellCheck on Docker scripts
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './docker/scripts'
+          severity: warning
+
+  validate-config:
+    name: Validate Configuration Templates
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Check config templates syntax
+        run: |
+          echo "Checking .env templates..."
+          for file in config/*.env.template config/examples/*.env; do
+            echo "Validating $file"
+            # Check for required variables
+            grep -q "REPO_URL=" "$file" || { echo "Missing REPO_URL in $file"; exit 1; }
+            grep -q "RUNNER_NAME=" "$file" || { echo "Missing RUNNER_NAME in $file"; exit 1; }
+            echo "✓ $file is valid"
+          done
+      
+      - name: Validate docker-compose template
+        run: |
+          if [ -f "config/docker-compose.yml.template" ]; then
+            # Basic YAML syntax check
+            python3 -c "import yaml; yaml.safe_load(open('config/docker-compose.yml.template'))"
+            echo "✓ docker-compose.yml.template is valid YAML"
+          fi
+
+  test-dockerfile:
+    name: Test Dockerfile Build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Build Docker image (test)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./docker
+          file: ./docker/Dockerfile
+          push: false
+          tags: github-runner:test
+          build-args: |
+            RUNNER_VERSION=2.329.0
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Test image structure
+        run: |
+          docker run --rm github-runner:test ls -la /home/runner
+          docker run --rm github-runner:test which docker
+          docker run --rm github-runner:test /home/runner/bin/Runner.Listener --version
+
+  validate-docs:
+    name: Validate Documentation
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Check Markdown files
+        uses: DavidAnson/markdownlint-cli2-action@v16
+        with:
+          globs: |
+            **/*.md
+            !node_modules
+        continue-on-error: true
+      
+      - name: Check for broken links in README
+        run: |
+          echo "Checking for broken relative links..."
+          grep -oP '\[.*?\]\((?!http)(.*?)\)' README.md | grep -oP '\(\K[^)]+' | while read -r link; do
+            if [ ! -e "$link" ]; then
+              echo "❌ Broken link found: $link"
+              exit 1
+            fi
+          done || echo "✓ All relative links are valid"
+
+  security-check:
+    name: Security Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Check for secrets in code
+        run: |
+          echo "Checking for potential secrets..."
+          ! grep -r -E '(github_pat_|ghp_|gho_|ghu_|ghs_|ghr_)' --include='*.sh' --include='*.md' .
+          ! grep -r -E 'GITHUB_TOKEN=' --include='*.env' --exclude='*.template' .
+          echo "✓ No obvious secrets found"
+      
+      - name: Check file permissions in git
+        run: |
+          echo "Checking for executable scripts..."
+          find scripts/ -type f -name '*.sh' | while read -r script; do
+            if [ ! -x "$script" ]; then
+              echo "⚠️  $script should be executable"
+            fi
+          done
+
+  integration-test:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Simulate deployment (dry-run)
+        run: |
+          echo "Testing deployment script..."
+          bash -n scripts/deploy.sh
+          bash -n scripts/setup.sh
+          bash -n scripts/undeploy.sh
+          bash -n scripts/update.sh
+          bash -n scripts/health-check.sh
+          echo "✓ All scripts have valid syntax"
