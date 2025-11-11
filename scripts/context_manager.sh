@@ -60,8 +60,8 @@ context_manager_get() {
     return 1
   fi
   
-  # Validate layer is in allowed list
-  if [[ ! " ${VALID_LAYERS[*]} " =~  ${layer}  ]]; then
+  # Validate layer is in allowed list (using glob matching to avoid SC2076)
+  if [[ ! " ${VALID_LAYERS[*]} " == *" ${layer} "* ]]; then
     echo "Error: invalid layer '${layer}'. Valid: ${VALID_LAYERS[*]}" >&2
     return 1
   fi
@@ -129,8 +129,8 @@ context_manager_set() {
     return 1
   fi
   
-  # Validate layer
-  if [[ ! " ${VALID_LAYERS[*]} " =~  ${layer}  ]]; then
+  # Validate layer (using glob matching to avoid SC2076)
+  if [[ ! " ${VALID_LAYERS[*]} " == *" ${layer} "* ]]; then
     echo "Error: invalid layer '${layer}'. Valid: ${VALID_LAYERS[*]}" >&2
     return 1
   fi
@@ -186,7 +186,8 @@ context_manager_export() {
     return 1
   fi
   
-  if [[ ! " ${VALID_LAYERS[*]} " =~  ${layer}  ]]; then
+  # Validate layer (using glob matching to avoid SC2076)
+  if [[ ! " ${VALID_LAYERS[*]} " == *" ${layer} "* ]]; then
     echo "Error: invalid layer '${layer}'. Valid: ${VALID_LAYERS[*]}" >&2
     return 1
   fi
@@ -248,7 +249,8 @@ context_manager_checkpoint() {
     return 1
   fi
   
-  if [[ ! " ${VALID_LAYERS[*]} " =~  ${layer}  ]]; then
+  # Validate layer (using glob matching to avoid SC2076)
+  if [[ ! " ${VALID_LAYERS[*]} " == *" ${layer} "* ]]; then
     echo "Error: invalid layer '${layer}'. Valid: ${VALID_LAYERS[*]}" >&2
     return 1
   fi
@@ -311,7 +313,8 @@ context_manager_rollback() {
     return 1
   fi
   
-  if [[ ! " ${VALID_LAYERS[*]} " =~  ${layer}  ]]; then
+  # Validate layer (using glob matching to avoid SC2076)
+  if [[ ! " ${VALID_LAYERS[*]} " == *" ${layer} "* ]]; then
     echo "Error: invalid layer '${layer}'. Valid: ${VALID_LAYERS[*]}" >&2
     return 1
   fi
