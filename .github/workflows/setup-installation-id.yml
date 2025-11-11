@@ -1,0 +1,96 @@
+name: Setup Installation ID Secret
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_id:
+        description: 'GitHub App ID (or leave empty to use secret)'
+        required: false
+        type: string
+      target_repository:
+        description: 'Target repository (owner/repo)'
+        required: false
+        default: ${{ github.repository }}
+        type: string
+
+permissions:
+  contents: read
+  # Note: Setting secrets requires personal access token with admin:repo_hook scope
+  # or GitHub App with administration:write permission
+
+jobs:
+  setup-installation-id:
+    name: Setup INSTALLATION_ID Secret
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get Installation ID
+        id: get_installation_id
+        uses: ./.github/actions/get-installation-id
+        with:
+          app_id: ${{ inputs.app_id || secrets.GITHUB_APP_ID }}
+          private_key: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+          repository: ${{ inputs.target_repository }}
+
+      - name: Display Installation ID
+        run: |
+          echo "✅ Installation ID retrieved: ${{ steps.get_installation_id.outputs.installation_id }}"
+          echo ""
+          echo "📋 To set this as a repository secret, run:"
+          echo ""
+          echo "gh secret set INSTALLATION_ID --body \"${{ steps.get_installation_id.outputs.installation_id }}\" --repo ${{ github.repository }}"
+          echo ""
+          echo "Or use GitHub CLI with admin token:"
+          echo ""
+          echo "export GH_TOKEN=<your_admin_token>"
+          echo "gh secret set INSTALLATION_ID --body \"${{ steps.get_installation_id.outputs.installation_id }}\" --repo ${{ github.repository }}"
+
+      - name: Set Installation ID Secret (if GH_TOKEN available)
+        if: env.GH_TOKEN != ''
+        env:
+          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+        run: |
+          if [ -n "$GH_TOKEN" ]; then
+            gh secret set INSTALLATION_ID \
+              --body "${{ steps.get_installation_id.outputs.installation_id }}" \
+              --repo ${{ github.repository }}
+            echo "✅ INSTALLATION_ID secret has been set successfully"
+          else
+            echo "⚠️  GH_ADMIN_TOKEN not available. Please set the secret manually."
+            echo "Run: gh secret set INSTALLATION_ID --body \"${{ steps.get_installation_id.outputs.installation_id }}\""
+          fi
+
+      - name: Summary
+        run: |
+          echo "## 🎉 Installation ID Setup Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Installation ID**: \`${{ steps.get_installation_id.outputs.installation_id }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ secrets.GH_ADMIN_TOKEN }}" ]; then
+            echo "✅ Secret \`INSTALLATION_ID\` has been set automatically" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️  **Manual Action Required**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Set the secret manually using GitHub CLI:" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+            echo "gh secret set INSTALLATION_ID --body \"${{ steps.get_installation_id.outputs.installation_id }}\" --repo ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Or via GitHub UI:" >> $GITHUB_STEP_SUMMARY
+            echo "1. Go to Settings → Secrets and variables → Actions" >> $GITHUB_STEP_SUMMARY
+            echo "2. Click 'New repository secret'" >> $GITHUB_STEP_SUMMARY
+            echo "3. Name: \`INSTALLATION_ID\`" >> $GITHUB_STEP_SUMMARY
+            echo "4. Value: \`${{ steps.get_installation_id.outputs.installation_id }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Verification" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Verify the secret is set:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "gh secret list --repo ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
