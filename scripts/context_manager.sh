@@ -176,7 +176,7 @@ context_manager_set() {
 #   context_manager_export app nomask  # For debugging only
 #
 context_manager_export() {
-  local layer="$1"
+  local layer="${1:-}"
   local mask="${2:-mask}"
   
   # Validate layer
