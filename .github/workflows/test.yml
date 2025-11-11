@@ -72,6 +72,7 @@ jobs:
           context: ./docker
           file: ./docker/Dockerfile
           push: false
+          load: true
           tags: github-runner:test
           build-args: |
             RUNNER_VERSION=2.329.0
