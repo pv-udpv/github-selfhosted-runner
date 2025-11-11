@@ -107,17 +107,21 @@ echo ""
 # Update runners
 for runner in "${RUNNERS[@]}"; do
     echo "Updating $runner..."
-    
+
     # Get current configuration
+    # shellcheck disable=SC2034
     REPO_URL=$(docker inspect "$runner" | jq -r '.[0].Config.Env[] | select(startswith("REPO_URL="))' | cut -d= -f2-)
+    # shellcheck disable=SC2034
     LABELS=$(docker inspect "$runner" | jq -r '.[0].Config.Env[] | select(startswith("LABELS="))' | cut -d= -f2-)
+    # shellcheck disable=SC2034
     CPU_LIMIT=$(docker inspect "$runner" | jq -r '.[0].HostConfig.NanoCpus / 1000000000')
+    # shellcheck disable=SC2034
     MEMORY_LIMIT=$(docker inspect "$runner" | jq -r '.[0].HostConfig.Memory')
-    
+
     # Stop and remove old container
     docker stop "$runner"
     docker rm "$runner"
-    
+
     # Deploy new version
     if [ -n "$CONFIG_FILE" ] && [ -f "$CONFIG_FILE" ]; then
         # Update version in config
@@ -127,15 +131,15 @@ for runner in "${RUNNERS[@]}"; do
         echo "WARNING: No config file provided, using basic deployment"
         echo "Runner may need manual reconfiguration"
     fi
-    
+
     echo "✓ $runner updated"
-    
+
     # Wait before updating next runner (zero-downtime mode)
     if [ "$ZERO_DOWNTIME" = true ] && [ "$runner" != "${RUNNERS[-1]}" ]; then
         echo "Waiting 30 seconds before updating next runner..."
         sleep 30
     fi
-    
+
     echo ""
 done
 
