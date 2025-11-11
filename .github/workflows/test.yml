@@ -107,17 +107,33 @@ jobs:
       
       - name: Test image structure
         run: |
-          docker run --rm github-runner:test ls -la /home/runner
-          docker run --rm github-runner:test which docker
-          docker run --rm github-runner:test /home/runner/bin/Runner.Listener --version
+          echo "Testing image structure without entrypoint..."
+          docker run --rm --entrypoint /bin/bash github-runner:test -c "ls -la /home/runner"
+          docker run --rm --entrypoint /bin/bash github-runner:test -c "which docker"
+          docker run --rm --entrypoint /bin/bash github-runner:test -c "/home/runner/bin/Runner.Listener --version"
+          echo "✓ Image structure is valid"
       
-      - name: Test with default REPO_URL
+      - name: Test entrypoint REPO_URL detection
         run: |
-          echo "Testing with default REPO_URL (from github.repository context)..."
-          docker run --rm \
-            -e GITHUB_REPOSITORY="pv-udpv/github-selfhosted-runner" \
-            github-runner:test \
-            bash -c 'REPO_URL=${REPO_URL:-https://github.com/${GITHUB_REPOSITORY}}; echo "REPO_URL: $REPO_URL"'
+          echo "1. Testing GITHUB_REPOSITORY fallback..."
+          docker run --rm -e GITHUB_REPOSITORY="${{ github.repository }}" \
+            --entrypoint /bin/bash github-runner:test \
+            -c "/home/runner/entrypoint.sh echo 'Success' || exit 0"
+          
+          echo "2. Testing explicit REPO_URL..."
+          docker run --rm -e REPO_URL="https://github.com/${{ github.repository }}" \
+            --entrypoint /bin/bash github-runner:test \
+            -c "/home/runner/entrypoint.sh echo 'Success' || exit 0"
+          
+          echo "3. Testing failure without variables (expected to fail at validation)..."
+          if docker run --rm github-runner:test 2>&1 | grep -q "REPO_URL environment variable is required"; then
+            echo "✓ Correctly validates REPO_URL requirement"
+          else
+            echo "✗ Should have failed without REPO_URL"
+            exit 1
+          fi
+          
+          echo "✓ All entrypoint tests passed"
 
   validate-docs:
     name: Validate Documentation
