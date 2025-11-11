@@ -398,6 +398,32 @@ context_manager_rollback() {
 #
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   # Script is being executed, not sourced
+  
+  # Handle help before argument count check
+  if [[ $# -ge 1 ]] && [[ "$1" == "help" || "$1" == "--help" || "$1" == "-h" ]]; then
+    cat << 'EOF'
+Usage: context_manager.sh <command> [args...]
+
+Commands:
+  get <layer> <var>          Get a context variable
+  set <layer> <var> <value>  Set a context variable
+  export <layer> [nomask]    Export all variables for a layer
+  checkpoint <layer>         Create a checkpoint of layer state
+  rollback <layer>           Restore state from checkpoint
+
+Layers:
+  app, account, repo, commit, workflow, job, runner, workspace
+
+Examples:
+  context_manager.sh get runner name
+  context_manager.sh set runner busy true
+  context_manager.sh export runner
+  context_manager.sh checkpoint runner
+  context_manager.sh rollback runner
+EOF
+    exit 0
+  fi
+  
   if [[ $# -lt 1 ]]; then
     cat >&2 << 'EOF'
 Usage: context_manager.sh <command> [args...]
@@ -440,9 +466,6 @@ EOF
       ;;
     rollback)
       context_manager_rollback "$@"
-      ;;
-    help|--help|-h)
-      "$0" # Show usage
       ;;
     *)
       echo "Error: Unknown command '$command'" >&2
