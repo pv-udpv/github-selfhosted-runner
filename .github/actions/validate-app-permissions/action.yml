@@ -1,0 +1,189 @@
+name: 'Validate GitHub App Permissions'
+description: 'Verify GitHub App has required permissions for runner management'
+author: 'pv-udpv'
+
+inputs:
+  app_id:
+    description: 'GitHub App ID'
+    required: true
+  private_key:
+    description: 'GitHub App private key (PEM format)'
+    required: true
+  repository:
+    description: 'Target repository (owner/repo)'
+    required: true
+  required_permissions:
+    description: 'Comma-separated list of required permissions'
+    required: false
+    default: 'actions:write,administration:write,metadata:read'
+
+outputs:
+  valid:
+    description: 'Whether app has all required permissions (true/false)'
+    value: ${{ steps.validate.outputs.valid }}
+  missing_permissions:
+    description: 'List of missing permissions (if any)'
+    value: ${{ steps.validate.outputs.missing }}
+  installation_id:
+    description: 'GitHub App installation ID'
+    value: ${{ steps.validate.outputs.installation_id }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        echo "::group::Validating inputs"
+        
+        if [[ -z "${{ inputs.app_id }}" ]]; then
+          echo "::error::app_id is required"
+          exit 1
+        fi
+        
+        if [[ -z "${{ inputs.private_key }}" ]]; then
+          echo "::error::private_key is required"
+          exit 1
+        fi
+        
+        if [[ ! "${{ inputs.repository }}" =~ ^[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+$ ]]; then
+          echo "::error::Invalid repository format. Expected: owner/repo"
+          exit 1
+        fi
+        
+        echo "✅ Inputs validated successfully"
+        echo "::endgroup::"
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        if ! command -v jq &> /dev/null; then
+          echo "Installing jq..."
+          sudo apt-get update -qq && sudo apt-get install -y jq
+        fi
+
+    - name: Validate permissions
+      id: validate
+      shell: bash
+      env:
+        APP_ID: ${{ inputs.app_id }}
+        PRIVATE_KEY: ${{ inputs.private_key }}
+        REPOSITORY: ${{ inputs.repository }}
+        REQUIRED_PERMS: ${{ inputs.required_permissions }}
+      run: |
+        set -euo pipefail
+        
+        echo "::group::Validating GitHub App permissions"
+        
+        # Generate JWT for GitHub App authentication
+        NOW=$(date +%s)
+        IAT=$((NOW - 60))
+        EXP=$((NOW + 600))
+        
+        HEADER='{"alg":"RS256","typ":"JWT"}'
+        PAYLOAD=$(jq -nc \
+          --arg iat "$IAT" \
+          --arg exp "$EXP" \
+          --arg iss "$APP_ID" \
+          '{iat: ($iat | tonumber), exp: ($exp | tonumber), iss: ($iss | tonumber)}')
+        
+        # Create JWT (simplified - in production use proper JWT library)
+        HEADER_B64=$(echo -n "$HEADER" | base64 | tr -d '=' | tr '/+' '_-' | tr -d '\n')
+        PAYLOAD_B64=$(echo -n "$PAYLOAD" | base64 | tr -d '=' | tr '/+' '_-' | tr -d '\n')
+        
+        # Sign with private key
+        echo "$PRIVATE_KEY" > /tmp/private_key.pem
+        SIGNATURE=$(echo -n "${HEADER_B64}.${PAYLOAD_B64}" | \
+          openssl dgst -sha256 -sign /tmp/private_key.pem | \
+          base64 | tr -d '=' | tr '/+' '_-' | tr -d '\n')
+        rm -f /tmp/private_key.pem
+        
+        JWT="${HEADER_B64}.${PAYLOAD_B64}.${SIGNATURE}"
+        
+        # Get installation ID
+        IFS='/' read -r OWNER REPO <<< "$REPOSITORY"
+        INSTALLATION_RESPONSE=$(curl -sS -X GET \
+          -H "Authorization: Bearer $JWT" \
+          -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/repos/${OWNER}/${REPO}/installation")
+        
+        INSTALLATION_ID=$(echo "$INSTALLATION_RESPONSE" | jq -r '.id // empty')
+        
+        if [[ -z "$INSTALLATION_ID" ]]; then
+          echo "::error::Failed to get installation ID. App may not be installed."
+          echo "valid=false" >> "$GITHUB_OUTPUT"
+          echo "missing=all" >> "$GITHUB_OUTPUT"
+          exit 1
+        fi
+        
+        echo "Installation ID: $INSTALLATION_ID"
+        echo "installation_id=$INSTALLATION_ID" >> "$GITHUB_OUTPUT"
+        
+        # Get installation access token
+        TOKEN_RESPONSE=$(curl -sS -X POST \
+          -H "Authorization: Bearer $JWT" \
+          -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/app/installations/${INSTALLATION_ID}/access_tokens")
+        
+        ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.token // empty')
+        
+        if [[ -z "$ACCESS_TOKEN" ]]; then
+          echo "::error::Failed to get access token"
+          echo "valid=false" >> "$GITHUB_OUTPUT"
+          exit 1
+        fi
+        
+        # Get app permissions
+        APP_RESPONSE=$(curl -sS -X GET \
+          -H "Authorization: Bearer $ACCESS_TOKEN" \
+          -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/app/installations/${INSTALLATION_ID}")
+        
+        PERMISSIONS=$(echo "$APP_RESPONSE" | jq -r '.permissions // {}')
+        
+        echo "Current permissions:"
+        echo "$PERMISSIONS" | jq .
+        
+        # Check required permissions
+        IFS=',' read -ra REQUIRED <<< "$REQUIRED_PERMS"
+        MISSING=()
+        
+        for PERM in "${REQUIRED[@]}"; do
+          IFS=':' read -r SCOPE LEVEL <<< "$PERM"
+          CURRENT_LEVEL=$(echo "$PERMISSIONS" | jq -r ".${SCOPE} // \"none\"")
+          
+          if [[ "$CURRENT_LEVEL" == "none" ]] || [[ "$CURRENT_LEVEL" != "$LEVEL" && "$CURRENT_LEVEL" != "admin" ]]; then
+            echo "::warning::Missing or insufficient permission: $SCOPE (required: $LEVEL, current: $CURRENT_LEVEL)"
+            MISSING+=("$PERM")
+          else
+            echo "✅ Permission OK: $SCOPE = $CURRENT_LEVEL"
+          fi
+        done
+        
+        if [[ ${#MISSING[@]} -eq 0 ]]; then
+          echo "✅ All required permissions are granted"
+          echo "valid=true" >> "$GITHUB_OUTPUT"
+          echo "missing=" >> "$GITHUB_OUTPUT"
+        else
+          echo "::error::Missing permissions: ${MISSING[*]}"
+          echo "valid=false" >> "$GITHUB_OUTPUT"
+          echo "missing=${MISSING[*]}" >> "$GITHUB_OUTPUT"
+          exit 1
+        fi
+        
+        echo "::endgroup::"
+
+    - name: Summary
+      if: always()
+      shell: bash
+      run: |
+        echo "### Permission Validation Summary" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Repository**: ${{ inputs.repository }}" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Valid**: ${{ steps.validate.outputs.valid }}" >> "$GITHUB_STEP_SUMMARY"
+        
+        if [[ -n "${{ steps.validate.outputs.missing }}" ]]; then
+          echo "- **Missing Permissions**: ${{ steps.validate.outputs.missing }}" >> "$GITHUB_STEP_SUMMARY"
+        fi
