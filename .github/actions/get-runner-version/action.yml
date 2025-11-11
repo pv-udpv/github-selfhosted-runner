@@ -1,0 +1,40 @@
+name: 'Get Latest GitHub Actions Runner Version'
+description: 'Fetches the latest stable version of GitHub Actions Runner'
+
+inputs:
+  version:
+    description: 'Specific version to use (leave empty for latest)'
+    required: false
+    default: ''
+
+outputs:
+  version:
+    description: 'Runner version number (e.g., 2.329.0)'
+    value: ${{ steps.get_version.outputs.version }}
+  download_url:
+    description: 'Download URL for the runner package'
+    value: ${{ steps.get_version.outputs.download_url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Get Runner Version
+      id: get_version
+      shell: bash
+      env:
+        REQUESTED_VERSION: ${{ inputs.version }}
+      run: |
+        if [ -n "$REQUESTED_VERSION" ]; then
+          version="$REQUESTED_VERSION"
+          echo "📌 Using specified version: $version"
+        else
+          response=$(curl -s -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/actions/runner/releases/latest")
+          version=$(echo "$response" | jq -r '.tag_name' | sed 's/^v//')
+          if [ -z "$version" ] || [ "$version" = "null" ]; then
+            version="2.329.0"
+          fi
+        fi
+        download_url="https://github.com/actions/runner/releases/download/v${version}/actions-runner-linux-x64-${version}.tar.gz"
+        echo "version=$version" >> $GITHUB_OUTPUT
+        echo "download_url=$download_url" >> $GITHUB_OUTPUT

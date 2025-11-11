@@ -1,0 +1,85 @@
+name: 'Generate Runner Configuration'
+description: 'Generates runner.env configuration file'
+
+inputs:
+  app_id:
+    description: 'GitHub App ID'
+    required: true
+  installation_id:
+    description: 'GitHub App Installation ID'
+    required: true
+  private_key:
+    description: 'GitHub App Private Key'
+    required: true
+  repository:
+    description: 'Target repository URL'
+    required: true
+  runner_name:
+    description: 'Runner name'
+    required: true
+  labels:
+    description: 'Runner labels (comma-separated)'
+    required: false
+    default: 'self-hosted,linux,x64,docker'
+  cpu_limit:
+    description: 'CPU limit'
+    required: false
+    default: '2.0'
+  memory_limit:
+    description: 'Memory limit'
+    required: false
+    default: '4g'
+  runner_version:
+    description: 'Runner version'
+    required: false
+    default: '2.329.0'
+
+outputs:
+  config_path:
+    description: 'Path to generated config file'
+    value: ${{ steps.generate.outputs.config_path }}
+  key_path:
+    description: 'Path to private key file'
+    value: ${{ steps.generate.outputs.key_path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Generate Configuration
+      id: generate
+      shell: bash
+      env:
+        APP_ID: ${{ inputs.app_id }}
+        INSTALLATION_ID: ${{ inputs.installation_id }}
+        PRIVATE_KEY: ${{ inputs.private_key }}
+        REPO_URL: ${{ inputs.repository }}
+        RUNNER_NAME: ${{ inputs.runner_name }}
+        LABELS: ${{ inputs.labels }}
+        CPU_LIMIT: ${{ inputs.cpu_limit }}
+        MEMORY_LIMIT: ${{ inputs.memory_limit }}
+        RUNNER_VERSION: ${{ inputs.runner_version }}
+      run: |
+        mkdir -p /tmp/runner-config
+        echo "$PRIVATE_KEY" > /tmp/runner-config/app-key.pem
+        chmod 600 /tmp/runner-config/app-key.pem
+        cat > /tmp/runner-config/runner.env << EOF
+        # GitHub Self-Hosted Runner Configuration
+        # Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        GITHUB_APP_ID=$APP_ID
+        GITHUB_APP_INSTALLATION_ID=$INSTALLATION_ID
+        GITHUB_APP_PRIVATE_KEY_PATH=/etc/github-runner/app-key.pem
+        REPO_URL=$REPO_URL
+        RUNNER_NAME=$RUNNER_NAME
+        LABELS=$LABELS
+        CPU_LIMIT=$CPU_LIMIT
+        CPU_RESERVATION=0.5
+        MEMORY_LIMIT=$MEMORY_LIMIT
+        MEMORY_RESERVATION=1g
+        ENABLE_DOCKER=true
+        RUNNER_VERSION=$RUNNER_VERSION
+        CLEANUP_WORKSPACE_DAYS=7
+        CLEANUP_DOCKER_HOURS=24
+        EOF
+        echo "config_path=/tmp/runner-config/runner.env" >> $GITHUB_OUTPUT
+        echo "key_path=/tmp/runner-config/app-key.pem" >> $GITHUB_OUTPUT
+        cat /tmp/runner-config/runner.env

@@ -1,0 +1,68 @@
+name: 'Get GitHub App Installation ID'
+description: 'Retrieves GitHub App Installation ID for the repository'
+
+inputs:
+  app_id:
+    description: 'GitHub App ID'
+    required: true
+  private_key:
+    description: 'GitHub App Private Key (PEM format)'
+    required: true
+  repository:
+    description: 'Target repository (owner/repo format)'
+    required: false
+    default: ${{ github.repository }}
+
+outputs:
+  installation_id:
+    description: 'GitHub App Installation ID'
+    value: ${{ steps.get_id.outputs.installation_id }}
+  jwt_token:
+    description: 'Generated JWT token'
+    value: ${{ steps.generate_jwt.outputs.jwt }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Generate JWT token
+      id: generate_jwt
+      shell: bash
+      env:
+        APP_ID: ${{ inputs.app_id }}
+        PRIVATE_KEY: ${{ inputs.private_key }}
+      run: |
+        echo "$PRIVATE_KEY" > /tmp/private-key.pem
+        chmod 600 /tmp/private-key.pem
+        now=$(date +%s)
+        iat=$((now - 60))
+        exp=$((now + 600))
+        header='{"alg":"RS256","typ":"JWT"}'
+        payload="{\"iat\":${iat},\"exp\":${exp},\"iss\":\"${APP_ID}\"}"
+        b64_header=$(echo -n "$header" | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+        b64_payload=$(echo -n "$payload" | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+        signature=$(echo -n "${b64_header}.${b64_payload}" | \
+          openssl dgst -sha256 -sign /tmp/private-key.pem | \
+          openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+        jwt="${b64_header}.${b64_payload}.${signature}"
+        echo "jwt=$jwt" >> $GITHUB_OUTPUT
+        rm -f /tmp/private-key.pem
+    - name: Get Installation ID
+      id: get_id
+      shell: bash
+      env:
+        JWT_TOKEN: ${{ steps.generate_jwt.outputs.jwt }}
+        REPO: ${{ inputs.repository }}
+      run: |
+        response=$(curl -s -X GET \
+          -H "Authorization: Bearer $JWT_TOKEN" \
+          -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/app/installations")
+        echo "$response" | jq -r '.[] | "\(.account.login) - ID: \(.id)"'
+        owner=$(echo "$REPO" | cut -d'/' -f1)
+        installation_id=$(echo "$response" | jq -r ".[] | select(.account.login == \"$owner\") | .id" | head -1)
+        if [ -z "$installation_id" ] || [ "$installation_id" = "null" ]; then
+          echo "❌ App not installed on account: $owner"
+          exit 1
+        fi
+        echo "installation_id=$installation_id" >> $GITHUB_OUTPUT
+        echo "✅ Installation ID: $installation_id"

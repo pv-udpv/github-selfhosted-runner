@@ -1,0 +1,84 @@
+name: 'Get Runner Registration Token'
+description: 'Generates a registration token for GitHub Actions runner'
+
+inputs:
+  app_id:
+    description: 'GitHub App ID'
+    required: true
+  installation_id:
+    description: 'GitHub App Installation ID'
+    required: true
+  private_key:
+    description: 'GitHub App Private Key'
+    required: true
+  repository:
+    description: 'Target repository (owner/repo)'
+    required: true
+
+outputs:
+  token:
+    description: 'Runner registration token'
+    value: ${{ steps.get_token.outputs.token }}
+  expires_at:
+    description: 'Token expiration time'
+    value: ${{ steps.get_token.outputs.expires_at }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Generate JWT
+      id: jwt
+      shell: bash
+      env:
+        APP_ID: ${{ inputs.app_id }}
+        PRIVATE_KEY: ${{ inputs.private_key }}
+      run: |
+        echo "$PRIVATE_KEY" > /tmp/key.pem
+        chmod 600 /tmp/key.pem
+        now=$(date +%s)
+        iat=$((now - 60))
+        exp=$((now + 600))
+        header='{"alg":"RS256","typ":"JWT"}'
+        payload="{\"iat\":${iat},\"exp\":${exp},\"iss\":\"${APP_ID}\"}"
+        b64_header=$(echo -n "$header" | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+        b64_payload=$(echo -n "$payload" | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+        signature=$(echo -n "${b64_header}.${b64_payload}" | \
+          openssl dgst -sha256 -sign /tmp/key.pem | \
+          openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+        jwt="${b64_header}.${b64_payload}.${signature}"
+        echo "jwt=$jwt" >> $GITHUB_OUTPUT
+        rm -f /tmp/key.pem
+    - name: Get Installation Access Token
+      id: access_token
+      shell: bash
+      env:
+        JWT: ${{ steps.jwt.outputs.jwt }}
+        INSTALLATION_ID: ${{ inputs.installation_id }}
+      run: |
+        response=$(curl -s -X POST \
+          -H "Authorization: Bearer $JWT" \
+          -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/app/installations/$INSTALLATION_ID/access_tokens")
+        token=$(echo "$response" | jq -r '.token')
+        if [ -z "$token" ] || [ "$token" = "null" ]; then
+          exit 1
+        fi
+        echo "access_token=$token" >> $GITHUB_OUTPUT
+    - name: Get Registration Token
+      id: get_token
+      shell: bash
+      env:
+        ACCESS_TOKEN: ${{ steps.access_token.outputs.access_token }}
+        REPO: ${{ inputs.repository }}
+      run: |
+        response=$(curl -s -X POST \
+          -H "Authorization: token $ACCESS_TOKEN" \
+          -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/repos/$REPO/actions/runners/registration-token")
+        token=$(echo "$response" | jq -r '.token')
+        expires_at=$(echo "$response" | jq -r '.expires_at')
+        if [ -z "$token" ] || [ "$token" = "null" ]; then
+          exit 1
+        fi
+        echo "token=$token" >> $GITHUB_OUTPUT
+        echo "expires_at=$expires_at" >> $GITHUB_OUTPUT
