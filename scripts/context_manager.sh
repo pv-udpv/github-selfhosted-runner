@@ -61,7 +61,7 @@ context_manager_get() {
   fi
   
   # Validate layer is in allowed list
-  if [[ ! " ${VALID_LAYERS[*]} " =~ " ${layer} " ]]; then
+  if [[ ! " ${VALID_LAYERS[*]} " =~  ${layer}  ]]; then
     echo "Error: invalid layer '${layer}'. Valid: ${VALID_LAYERS[*]}" >&2
     return 1
   fi
@@ -130,7 +130,7 @@ context_manager_set() {
   fi
   
   # Validate layer
-  if [[ ! " ${VALID_LAYERS[*]} " =~ " ${layer} " ]]; then
+  if [[ ! " ${VALID_LAYERS[*]} " =~  ${layer}  ]]; then
     echo "Error: invalid layer '${layer}'. Valid: ${VALID_LAYERS[*]}" >&2
     return 1
   fi
@@ -186,7 +186,7 @@ context_manager_export() {
     return 1
   fi
   
-  if [[ ! " ${VALID_LAYERS[*]} " =~ " ${layer} " ]]; then
+  if [[ ! " ${VALID_LAYERS[*]} " =~  ${layer}  ]]; then
     echo "Error: invalid layer '${layer}'. Valid: ${VALID_LAYERS[*]}" >&2
     return 1
   fi
@@ -248,7 +248,7 @@ context_manager_checkpoint() {
     return 1
   fi
   
-  if [[ ! " ${VALID_LAYERS[*]} " =~ " ${layer} " ]]; then
+  if [[ ! " ${VALID_LAYERS[*]} " =~  ${layer}  ]]; then
     echo "Error: invalid layer '${layer}'. Valid: ${VALID_LAYERS[*]}" >&2
     return 1
   fi
@@ -311,7 +311,7 @@ context_manager_rollback() {
     return 1
   fi
   
-  if [[ ! " ${VALID_LAYERS[*]} " =~ " ${layer} " ]]; then
+  if [[ ! " ${VALID_LAYERS[*]} " =~  ${layer}  ]]; then
     echo "Error: invalid layer '${layer}'. Valid: ${VALID_LAYERS[*]}" >&2
     return 1
   fi
