@@ -14,9 +14,15 @@ error() { echo "${LOG_PREFIX} ERROR: $*" >&2; }
 # Configuration Validation
 # =============================================================================
 
+# Default REPO_URL from GitHub context if not provided
 if [ -z "${REPO_URL:-}" ]; then
-    error "REPO_URL environment variable is required"
-    exit 1
+    if [ -n "${GITHUB_REPOSITORY:-}" ]; then
+        REPO_URL="https://github.com/${GITHUB_REPOSITORY}"
+        log "Using default REPO_URL from GITHUB_REPOSITORY: ${REPO_URL}"
+    else
+        error "REPO_URL environment variable is required (or set GITHUB_REPOSITORY)"
+        exit 1
+    fi
 fi
 
 RUNNER_NAME=${RUNNER_NAME:-docker-runner-$(hostname)}
