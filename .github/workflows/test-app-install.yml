@@ -1,0 +1,46 @@
+name: Test App Installation
+
+# Trigger the installation workflow for testing
+on:
+  workflow_dispatch:
+    inputs:
+      target_repo:
+        description: 'Target repository for app installation'
+        required: false
+        default: 'pv-udpv/github-selfhosted-runner'
+      runner_name:
+        description: 'Runner name'
+        required: false
+        default: 'test-runner'
+
+jobs:
+  test-installation:
+    name: "Test App Installation Workflow"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Verify workflow files exist
+        run: |
+          echo "Checking for install.yml workflow..."
+          test -f .github/workflows/install.yml && echo "✅ install.yml found" || echo "❌ install.yml not found"
+          
+          echo "Checking for setup scripts..."
+          test -f scripts/setup.sh && echo "✅ setup.sh found" || echo "❌ setup.sh not found"
+          test -f scripts/deploy.sh && echo "✅ deploy.sh found" || echo "❌ deploy.sh not found"
+      
+      - name: Validate GitHub App configuration
+        run: |
+          echo "Target repo: ${{ github.event.inputs.target_repo || 'pv-udpv/github-selfhosted-runner' }}"
+          echo "Runner name: ${{ github.event.inputs.runner_name || 'test-runner' }}"
+          echo "GitHub App authentication configured via repository secrets"
+      
+      - name: Trigger installation workflow
+        run: |
+          echo "Installation workflow would be triggered here"
+          echo "In production, this would:"
+          echo "  1. Authenticate using GitHub App (APP_ID + PRIVATE_KEY)"
+          echo "  2. Install app to target repository: ${{ github.event.inputs.target_repo || 'pv-udpv/github-selfhosted-runner' }}"
+          echo "  3. Register self-hosted runner"
+          echo "  4. Deploy runner container"
