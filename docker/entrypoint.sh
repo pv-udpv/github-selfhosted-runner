@@ -14,13 +14,22 @@ error() { echo "${LOG_PREFIX} ERROR: $*" >&2; }
 # Configuration Validation
 # =============================================================================
 
-# Default REPO_URL from GitHub context if not provided
+# Default REPO_URL in most common GitHub Actions/CI environments
 if [ -z "${REPO_URL:-}" ]; then
+    # 1. Use $GITHUB_REPOSITORY if present (Actions runtime)
     if [ -n "${GITHUB_REPOSITORY:-}" ]; then
         REPO_URL="https://github.com/${GITHUB_REPOSITORY}"
         log "Using default REPO_URL from GITHUB_REPOSITORY: ${REPO_URL}"
+    # 2. Use $CI_PROJECT_URL for GitLab or generic
+    elif [ -n "${CI_PROJECT_URL:-}" ]; then
+        REPO_URL="${CI_PROJECT_URL}"
+        log "Using default REPO_URL from CI_PROJECT_URL: ${REPO_URL}"
+    # 3. Heuristics: auto-detect from .git/config if present
+    elif [ -f .git/config ]; then
+        REPO_URL=$(git config --get remote.origin.url | sed -e 's/git@github.com:/https:\/\/github.com\//' -e 's/\.git$//')
+        log "Heuristically extracted REPO_URL from .git/config: ${REPO_URL}"
     else
-        error "REPO_URL environment variable is required (or set GITHUB_REPOSITORY)"
+        error "REPO_URL environment variable is required (or set GITHUB_REPOSITORY or CI_PROJECT_URL or provide .git/config)"
         exit 1
     fi
 fi
