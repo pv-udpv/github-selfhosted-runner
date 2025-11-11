@@ -1,0 +1,171 @@
+name: 'Check Runner Status'
+description: 'Check if a self-hosted runner is online, offline, or busy'
+author: 'pv-udpv'
+
+inputs:
+  github_token:
+    description: 'GitHub token (PAT or App installation token)'
+    required: true
+  repository:
+    description: 'Target repository (owner/repo)'
+    required: true
+  runner_name:
+    description: 'Runner name to check (optional - checks all if not provided)'
+    required: false
+    default: ''
+  runner_id:
+    description: 'Runner ID to check (takes precedence over runner_name)'
+    required: false
+    default: ''
+
+outputs:
+  status:
+    description: 'Runner status (online/offline/busy/not_found)'
+    value: ${{ steps.check.outputs.status }}
+  runner_id:
+    description: 'Runner ID'
+    value: ${{ steps.check.outputs.runner_id }}
+  runner_name:
+    description: 'Runner name'
+    value: ${{ steps.check.outputs.runner_name }}
+  busy:
+    description: 'Whether runner is currently executing a job (true/false)'
+    value: ${{ steps.check.outputs.busy }}
+  labels:
+    description: 'Runner labels (JSON array)'
+    value: ${{ steps.check.outputs.labels }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        echo "::group::Validating inputs"
+        
+        if [[ -z "${{ inputs.github_token }}" ]]; then
+          echo "::error::github_token is required"
+          exit 1
+        fi
+        
+        if [[ ! "${{ inputs.repository }}" =~ ^[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+$ ]]; then
+          echo "::error::Invalid repository format. Expected: owner/repo"
+          exit 1
+        fi
+        
+        if [[ -z "${{ inputs.runner_id }}" && -z "${{ inputs.runner_name }}" ]]; then
+          echo "::warning::Neither runner_id nor runner_name provided. Will check all runners."
+        fi
+        
+        echo "✅ Inputs validated successfully"
+        echo "::endgroup::"
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        if ! command -v jq &> /dev/null; then
+          echo "Installing jq..."
+          sudo apt-get update -qq && sudo apt-get install -y jq
+        fi
+
+    - name: Check runner status
+      id: check
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        REPOSITORY: ${{ inputs.repository }}
+        RUNNER_NAME: ${{ inputs.runner_name }}
+        RUNNER_ID: ${{ inputs.runner_id }}
+      run: |
+        set -euo pipefail
+        
+        echo "::group::Checking runner status"
+        
+        IFS='/' read -r OWNER REPO <<< "$REPOSITORY"
+        
+        # List all runners
+        RESPONSE=$(curl -sS -X GET \
+          -H "Authorization: Bearer $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github+json" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          "https://api.github.com/repos/${OWNER}/${REPO}/actions/runners?per_page=100")
+        
+        TOTAL_COUNT=$(echo "$RESPONSE" | jq -r '.total_count // 0')
+        echo "Total runners: $TOTAL_COUNT"
+        
+        if [[ $TOTAL_COUNT -eq 0 ]]; then
+          echo "::warning::No runners found for repository"
+          echo "status=not_found" >> "$GITHUB_OUTPUT"
+          echo "runner_id=" >> "$GITHUB_OUTPUT"
+          echo "runner_name=" >> "$GITHUB_OUTPUT"
+          echo "busy=false" >> "$GITHUB_OUTPUT"
+          echo "labels=[]" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        
+        # Find specific runner
+        if [[ -n "$RUNNER_ID" ]]; then
+          RUNNER=$(echo "$RESPONSE" | jq -r ".runners[] | select(.id == $RUNNER_ID)")
+        elif [[ -n "$RUNNER_NAME" ]]; then
+          RUNNER=$(echo "$RESPONSE" | jq -r ".runners[] | select(.name == \"$RUNNER_NAME\")")
+        else
+          # If no specific runner requested, check first runner
+          RUNNER=$(echo "$RESPONSE" | jq -r '.runners[0]')
+        fi
+        
+        if [[ -z "$RUNNER" || "$RUNNER" == "null" ]]; then
+          echo "::warning::Runner not found"
+          echo "status=not_found" >> "$GITHUB_OUTPUT"
+          echo "runner_id=" >> "$GITHUB_OUTPUT"
+          echo "runner_name=" >> "$GITHUB_OUTPUT"
+          echo "busy=false" >> "$GITHUB_OUTPUT"
+          echo "labels=[]" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        
+        # Extract runner details
+        R_ID=$(echo "$RUNNER" | jq -r '.id')
+        R_NAME=$(echo "$RUNNER" | jq -r '.name')
+        R_STATUS=$(echo "$RUNNER" | jq -r '.status')
+        R_BUSY=$(echo "$RUNNER" | jq -r '.busy')
+        R_LABELS=$(echo "$RUNNER" | jq -c '.labels')
+        
+        echo "Runner found:"
+        echo "  ID: $R_ID"
+        echo "  Name: $R_NAME"
+        echo "  Status: $R_STATUS"
+        echo "  Busy: $R_BUSY"
+        echo "  Labels: $R_LABELS"
+        
+        # Set outputs
+        echo "status=$R_STATUS" >> "$GITHUB_OUTPUT"
+        echo "runner_id=$R_ID" >> "$GITHUB_OUTPUT"
+        echo "runner_name=$R_NAME" >> "$GITHUB_OUTPUT"
+        echo "busy=$R_BUSY" >> "$GITHUB_OUTPUT"
+        echo "labels=$R_LABELS" >> "$GITHUB_OUTPUT"
+        
+        if [[ "$R_STATUS" == "online" ]]; then
+          if [[ "$R_BUSY" == "true" ]]; then
+            echo "⚙️ Runner is online and busy"
+          else
+            echo "✅ Runner is online and idle"
+          fi
+        else
+          echo "❌ Runner is $R_STATUS"
+        fi
+        
+        echo "::endgroup::"
+
+    - name: Summary
+      if: always()
+      shell: bash
+      run: |
+        echo "### Runner Status Check" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Repository**: ${{ inputs.repository }}" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Runner ID**: ${{ steps.check.outputs.runner_id }}" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Runner Name**: ${{ steps.check.outputs.runner_name }}" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Status**: ${{ steps.check.outputs.status }}" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Busy**: ${{ steps.check.outputs.busy }}" >> "$GITHUB_STEP_SUMMARY"

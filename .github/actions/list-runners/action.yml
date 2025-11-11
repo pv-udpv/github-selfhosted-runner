@@ -1,0 +1,183 @@
+name: 'List Runners'
+description: 'List all self-hosted runners for a repository with optional filtering'
+author: 'pv-udpv'
+
+inputs:
+  github_token:
+    description: 'GitHub token (PAT or App installation token)'
+    required: true
+  repository:
+    description: 'Target repository (owner/repo)'
+    required: true
+  status_filter:
+    description: 'Filter by status (online/offline/all)'
+    required: false
+    default: 'all'
+  label_filter:
+    description: 'Filter by label (comma-separated)'
+    required: false
+    default: ''
+  output_format:
+    description: 'Output format (table/json/csv)'
+    required: false
+    default: 'table'
+
+outputs:
+  runners_json:
+    description: 'All runners as JSON array'
+    value: ${{ steps.list.outputs.runners_json }}
+  total_count:
+    description: 'Total number of runners'
+    value: ${{ steps.list.outputs.total_count }}
+  online_count:
+    description: 'Number of online runners'
+    value: ${{ steps.list.outputs.online_count }}
+  offline_count:
+    description: 'Number of offline runners'
+    value: ${{ steps.list.outputs.offline_count }}
+  busy_count:
+    description: 'Number of busy runners'
+    value: ${{ steps.list.outputs.busy_count }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        echo "::group::Validating inputs"
+        
+        if [[ -z "${{ inputs.github_token }}" ]]; then
+          echo "::error::github_token is required"
+          exit 1
+        fi
+        
+        if [[ ! "${{ inputs.repository }}" =~ ^[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+$ ]]; then
+          echo "::error::Invalid repository format. Expected: owner/repo"
+          exit 1
+        fi
+        
+        if [[ "${{ inputs.status_filter }}" != "all" && \
+              "${{ inputs.status_filter }}" != "online" && \
+              "${{ inputs.status_filter }}" != "offline" ]]; then
+          echo "::error::Invalid status_filter. Must be: all, online, or offline"
+          exit 1
+        fi
+        
+        if [[ "${{ inputs.output_format }}" != "table" && \
+              "${{ inputs.output_format }}" != "json" && \
+              "${{ inputs.output_format }}" != "csv" ]]; then
+          echo "::error::Invalid output_format. Must be: table, json, or csv"
+          exit 1
+        fi
+        
+        echo "✅ Inputs validated successfully"
+        echo "::endgroup::"
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        if ! command -v jq &> /dev/null; then
+          echo "Installing jq..."
+          sudo apt-get update -qq && sudo apt-get install -y jq
+        fi
+
+    - name: List runners
+      id: list
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        REPOSITORY: ${{ inputs.repository }}
+        STATUS_FILTER: ${{ inputs.status_filter }}
+        LABEL_FILTER: ${{ inputs.label_filter }}
+        OUTPUT_FORMAT: ${{ inputs.output_format }}
+      run: |
+        set -euo pipefail
+        
+        echo "::group::Listing runners"
+        
+        IFS='/' read -r OWNER REPO <<< "$REPOSITORY"
+        
+        # Fetch all runners (handle pagination if needed)
+        PAGE=1
+        ALL_RUNNERS="[]"
+        
+        while true; do
+          RESPONSE=$(curl -sS -X GET \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${OWNER}/${REPO}/actions/runners?per_page=100&page=${PAGE}")
+          
+          RUNNERS=$(echo "$RESPONSE" | jq -r '.runners // []')
+          
+          if [[ "$RUNNERS" == "[]" ]]; then
+            break
+          fi
+          
+          ALL_RUNNERS=$(echo "$ALL_RUNNERS" | jq -c ". + $RUNNERS")
+          PAGE=$((PAGE + 1))
+        done
+        
+        # Apply status filter
+        if [[ "$STATUS_FILTER" != "all" ]]; then
+          ALL_RUNNERS=$(echo "$ALL_RUNNERS" | jq -c "[.[] | select(.status == \"$STATUS_FILTER\")]")
+        fi
+        
+        # Apply label filter
+        if [[ -n "$LABEL_FILTER" ]]; then
+          IFS=',' read -ra LABELS <<< "$LABEL_FILTER"
+          for LABEL in "${LABELS[@]}"; do
+            ALL_RUNNERS=$(echo "$ALL_RUNNERS" | jq -c "[.[] | select(.labels[].name == \"$LABEL\")]")
+          done
+        fi
+        
+        # Calculate statistics
+        TOTAL=$(echo "$ALL_RUNNERS" | jq 'length')
+        ONLINE=$(echo "$ALL_RUNNERS" | jq '[.[] | select(.status == "online")] | length')
+        OFFLINE=$(echo "$ALL_RUNNERS" | jq '[.[] | select(.status == "offline")] | length')
+        BUSY=$(echo "$ALL_RUNNERS" | jq '[.[] | select(.busy == true)] | length')
+        
+        echo "Statistics:"
+        echo "  Total: $TOTAL"
+        echo "  Online: $ONLINE"
+        echo "  Offline: $OFFLINE"
+        echo "  Busy: $BUSY"
+        
+        # Set outputs
+        echo "runners_json=$(echo "$ALL_RUNNERS" | jq -c .)" >> "$GITHUB_OUTPUT"
+        echo "total_count=$TOTAL" >> "$GITHUB_OUTPUT"
+        echo "online_count=$ONLINE" >> "$GITHUB_OUTPUT"
+        echo "offline_count=$OFFLINE" >> "$GITHUB_OUTPUT"
+        echo "busy_count=$BUSY" >> "$GITHUB_OUTPUT"
+        
+        # Format output
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "### Runners List" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        
+        case "$OUTPUT_FORMAT" in
+          "table")
+            echo "| ID | Name | Status | Busy | Labels |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|-----|------|--------|------|--------|" >> "$GITHUB_STEP_SUMMARY"
+            echo "$ALL_RUNNERS" | jq -r '.[] | "| \(.id) | \(.name) | \(.status) | \(.busy) | \(.labels | map(.name) | join(", ")) |"' >> "$GITHUB_STEP_SUMMARY"
+            ;;
+          "json")
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            echo "$ALL_RUNNERS" | jq . >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            ;;
+          "csv")
+            echo '```csv' >> "$GITHUB_STEP_SUMMARY"
+            echo "ID,Name,Status,Busy,Labels" >> "$GITHUB_STEP_SUMMARY"
+            echo "$ALL_RUNNERS" | jq -r '.[] | [.id, .name, .status, .busy, (.labels | map(.name) | join(";" ))] | @csv' >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            ;;
+        esac
+        
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "**Statistics**: Total: $TOTAL | Online: $ONLINE | Offline: $OFFLINE | Busy: $BUSY" >> "$GITHUB_STEP_SUMMARY"
+        
+        echo "::endgroup::"

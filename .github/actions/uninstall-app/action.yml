@@ -1,0 +1,237 @@
+name: 'Uninstall GitHub App'
+description: 'Remove GitHub App installation from repository and clean up resources'
+author: 'pv-udpv'
+
+inputs:
+  app_id:
+    description: 'GitHub App ID'
+    required: true
+  private_key:
+    description: 'GitHub App private key (PEM format)'
+    required: true
+  repository:
+    description: 'Target repository (owner/repo)'
+    required: true
+  installation_id:
+    description: 'Installation ID to uninstall (optional - will be auto-detected if not provided)'
+    required: false
+    default: ''
+  cleanup_runners:
+    description: 'Also remove all associated runners'
+    required: false
+    default: 'true'
+  force:
+    description: 'Force uninstall even if runners are active'
+    required: false
+    default: 'false'
+
+outputs:
+  success:
+    description: 'Whether uninstall was successful (true/false)'
+    value: ${{ steps.uninstall.outputs.success }}
+  removed_runners:
+    description: 'Number of runners removed'
+    value: ${{ steps.uninstall.outputs.removed_runners }}
+  installation_id:
+    description: 'Installation ID that was removed'
+    value: ${{ steps.uninstall.outputs.installation_id }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        echo "::group::Validating inputs"
+        
+        if [[ -z "${{ inputs.app_id }}" ]]; then
+          echo "::error::app_id is required"
+          exit 1
+        fi
+        
+        if [[ -z "${{ inputs.private_key }}" ]]; then
+          echo "::error::private_key is required"
+          exit 1
+        fi
+        
+        if [[ ! "${{ inputs.repository }}" =~ ^[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+$ ]]; then
+          echo "::error::Invalid repository format. Expected: owner/repo"
+          exit 1
+        fi
+        
+        echo "✅ Inputs validated successfully"
+        echo "::endgroup::"
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        if ! command -v jq &> /dev/null; then
+          echo "Installing jq..."
+          sudo apt-get update -qq && sudo apt-get install -y jq
+        fi
+
+    - name: Uninstall app
+      id: uninstall
+      shell: bash
+      env:
+        APP_ID: ${{ inputs.app_id }}
+        PRIVATE_KEY: ${{ inputs.private_key }}
+        REPOSITORY: ${{ inputs.repository }}
+        INSTALLATION_ID: ${{ inputs.installation_id }}
+        CLEANUP_RUNNERS: ${{ inputs.cleanup_runners }}
+        FORCE: ${{ inputs.force }}
+      run: |
+        set -euo pipefail
+        
+        echo "::group::Uninstalling GitHub App"
+        
+        IFS='/' read -r OWNER REPO <<< "$REPOSITORY"
+        
+        # Generate JWT for GitHub App authentication
+        NOW=$(date +%s)
+        IAT=$((NOW - 60))
+        EXP=$((NOW + 600))
+        
+        HEADER='{"alg":"RS256","typ":"JWT"}'
+        PAYLOAD=$(jq -nc \
+          --arg iat "$IAT" \
+          --arg exp "$EXP" \
+          --arg iss "$APP_ID" \
+          '{iat: ($iat | tonumber), exp: ($exp | tonumber), iss: ($iss | tonumber)}')
+        
+        # Create JWT
+        HEADER_B64=$(echo -n "$HEADER" | base64 | tr -d '=' | tr '/+' '_-' | tr -d '\n')
+        PAYLOAD_B64=$(echo -n "$PAYLOAD" | base64 | tr -d '=' | tr '/+' '_-' | tr -d '\n')
+        
+        # Sign with private key
+        echo "$PRIVATE_KEY" > /tmp/private_key.pem
+        SIGNATURE=$(echo -n "${HEADER_B64}.${PAYLOAD_B64}" | \
+          openssl dgst -sha256 -sign /tmp/private_key.pem | \
+          base64 | tr -d '=' | tr '/+' '_-' | tr -d '\n')
+        rm -f /tmp/private_key.pem
+        
+        JWT="${HEADER_B64}.${PAYLOAD_B64}.${SIGNATURE}"
+        
+        # Get installation ID if not provided
+        if [[ -z "$INSTALLATION_ID" ]]; then
+          echo "Detecting installation ID..."
+          INSTALLATION_RESPONSE=$(curl -sS -X GET \
+            -H "Authorization: Bearer $JWT" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${OWNER}/${REPO}/installation")
+          
+          INSTALLATION_ID=$(echo "$INSTALLATION_RESPONSE" | jq -r '.id // empty')
+          
+          if [[ -z "$INSTALLATION_ID" ]]; then
+            echo "::warning::App is not installed on this repository"
+            echo "success=true" >> "$GITHUB_OUTPUT"
+            echo "removed_runners=0" >> "$GITHUB_OUTPUT"
+            echo "installation_id=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+        fi
+        
+        echo "Installation ID: $INSTALLATION_ID"
+        echo "installation_id=$INSTALLATION_ID" >> "$GITHUB_OUTPUT"
+        
+        # Get installation access token
+        TOKEN_RESPONSE=$(curl -sS -X POST \
+          -H "Authorization: Bearer $JWT" \
+          -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/app/installations/${INSTALLATION_ID}/access_tokens")
+        
+        ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.token // empty')
+        
+        if [[ -z "$ACCESS_TOKEN" ]]; then
+          echo "::error::Failed to get access token for uninstall"
+          echo "success=false" >> "$GITHUB_OUTPUT"
+          exit 1
+        fi
+        
+        # Check and remove runners if requested
+        REMOVED_COUNT=0
+        if [[ "$CLEANUP_RUNNERS" == "true" ]]; then
+          echo "Checking for runners to remove..."
+          
+          RUNNERS_RESPONSE=$(curl -sS -X GET \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${OWNER}/${REPO}/actions/runners?per_page=100")
+          
+          RUNNER_IDS=$(echo "$RUNNERS_RESPONSE" | jq -r '.runners[].id')
+          
+          if [[ -n "$RUNNER_IDS" ]]; then
+            TOTAL_RUNNERS=$(echo "$RUNNER_IDS" | wc -l)
+            echo "Found $TOTAL_RUNNERS runners to remove"
+            
+            # Check if any runners are busy
+            BUSY_RUNNERS=$(echo "$RUNNERS_RESPONSE" | jq -r '[.runners[] | select(.busy == true)] | length')
+            
+            if [[ $BUSY_RUNNERS -gt 0 && "$FORCE" != "true" ]]; then
+              echo "::error::$BUSY_RUNNERS runners are currently busy. Use force=true to override."
+              echo "success=false" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+            
+            # Remove each runner
+            for RUNNER_ID in $RUNNER_IDS; do
+              echo "Removing runner ID: $RUNNER_ID"
+              
+              DELETE_RESPONSE=$(curl -sS -X DELETE \
+                -H "Authorization: Bearer $ACCESS_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                -w "\nHTTP_CODE:%{http_code}" \
+                "https://api.github.com/repos/${OWNER}/${REPO}/actions/runners/${RUNNER_ID}")
+              
+              HTTP_CODE=$(echo "$DELETE_RESPONSE" | grep "HTTP_CODE" | cut -d: -f2)
+              
+              if [[ "$HTTP_CODE" == "204" ]]; then
+                echo "  ✅ Runner $RUNNER_ID removed"
+                REMOVED_COUNT=$((REMOVED_COUNT + 1))
+              else
+                echo "  ⚠️ Failed to remove runner $RUNNER_ID (HTTP $HTTP_CODE)"
+              fi
+            done
+          else
+            echo "No runners found"
+          fi
+        fi
+        
+        echo "removed_runners=$REMOVED_COUNT" >> "$GITHUB_OUTPUT"
+        
+        # Uninstall GitHub App
+        echo "Uninstalling GitHub App from repository..."
+        
+        UNINSTALL_RESPONSE=$(curl -sS -X DELETE \
+          -H "Authorization: Bearer $JWT" \
+          -H "Accept: application/vnd.github+json" \
+          -w "\nHTTP_CODE:%{http_code}" \
+          "https://api.github.com/app/installations/${INSTALLATION_ID}")
+        
+        HTTP_CODE=$(echo "$UNINSTALL_RESPONSE" | grep "HTTP_CODE" | cut -d: -f2)
+        
+        if [[ "$HTTP_CODE" == "204" ]]; then
+          echo "✅ GitHub App uninstalled successfully"
+          echo "success=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "::error::Failed to uninstall app (HTTP $HTTP_CODE)"
+          echo "success=false" >> "$GITHUB_OUTPUT"
+          exit 1
+        fi
+        
+        echo "::endgroup::"
+
+    - name: Summary
+      if: always()
+      shell: bash
+      run: |
+        echo "### Uninstall Summary" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Repository**: ${{ inputs.repository }}" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Installation ID**: ${{ steps.uninstall.outputs.installation_id }}" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Success**: ${{ steps.uninstall.outputs.success }}" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Runners Removed**: ${{ steps.uninstall.outputs.removed_runners }}" >> "$GITHUB_STEP_SUMMARY"
