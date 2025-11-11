@@ -302,7 +302,7 @@ context_manager_checkpoint() {
 #   context_manager_rollback runner
 #
 context_manager_rollback() {
-  local layer="$1"
+  local layer="${1:-}"
   
   # Validate layer
   if [[ -z "${layer:-}" ]]; then
