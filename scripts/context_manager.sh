@@ -213,10 +213,10 @@ context_manager_export() {
   # Export variables, masking sensitive ones
   if [[ "$mask" == "nomask" ]]; then
     # No masking (use with extreme caution)
-    env | grep "^${prefix}"
+    env | grep "^${prefix}" || true
   else
     # Mask sensitive values
-    env | grep "^${prefix}" | \
+    env | grep "^${prefix}" || true | \
       awk -v pat="$SENSITIVE_PATTERNS" '
         BEGIN { IGNORECASE=1 }
         $0 ~ pat { 
