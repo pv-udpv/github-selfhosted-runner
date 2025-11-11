@@ -112,9 +112,9 @@ context_manager_get() {
 #   context_manager_set runner busy true
 #
 context_manager_set() {
-  local layer="$1"
-  local var="$2"
-  local value="$3"
+  local layer="${1:-}"
+  local var="${2:-}"
+  local value="${3:-}"
   
   # Validate required parameters
   if [[ -z "${layer:-}" ]]; then
