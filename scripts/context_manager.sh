@@ -44,8 +44,8 @@ VALID_LAYERS=("app" "account" "repo" "commit" "workflow" "job" "runner" "workspa
 #   value=$(context_manager_get runner name)
 #
 context_manager_get() {
-  local layer="$1"
-  local var="$2"
+  local layer="${1:-}"
+  local var="${2:-}"
   
   # Validate required parameters
   if [[ -z "${layer:-}" ]]; then
