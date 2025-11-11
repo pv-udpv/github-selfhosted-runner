@@ -8,9 +8,32 @@ on:
   workflow_dispatch:
 
 jobs:
+  check-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      docker_changed: ${{ steps.filter.outputs.docker }}
+      scripts_changed: ${{ steps.filter.outputs.scripts }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            docker:
+              - 'docker/**'
+              - '.github/workflows/test.yml'
+              - '.github/workflows/build-image.yml'
+            scripts:
+              - 'scripts/**'
+              - 'config/**'
+
   lint-scripts:
     name: Lint Shell Scripts
     runs-on: ubuntu-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.scripts_changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     
     steps:
       - name: Checkout code
@@ -31,6 +54,8 @@ jobs:
   validate-config:
     name: Validate Configuration Templates
     runs-on: ubuntu-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.scripts_changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     
     steps:
       - name: Checkout code
@@ -41,8 +66,7 @@ jobs:
           echo "Checking .env templates..."
           for file in config/*.env.template config/examples/*.env; do
             echo "Validating $file"
-            # Check for required variables
-            grep -q "REPO_URL=" "$file" || { echo "Missing REPO_URL in $file"; exit 1; }
+            # Check for required variables (REPO_URL is optional with default)
             grep -q "RUNNER_NAME=" "$file" || { echo "Missing RUNNER_NAME in $file"; exit 1; }
             echo "✓ $file is valid"
           done
@@ -58,6 +82,8 @@ jobs:
   test-dockerfile:
     name: Test Dockerfile Build
     runs-on: ubuntu-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.docker_changed == 'true' || github.event_name == 'workflow_dispatch'
     
     steps:
       - name: Checkout code
@@ -84,6 +110,14 @@ jobs:
           docker run --rm github-runner:test ls -la /home/runner
           docker run --rm github-runner:test which docker
           docker run --rm github-runner:test /home/runner/bin/Runner.Listener --version
+      
+      - name: Test with default REPO_URL
+        run: |
+          echo "Testing with default REPO_URL (from github.repository context)..."
+          docker run --rm \
+            -e GITHUB_REPOSITORY="pv-udpv/github-selfhosted-runner" \
+            github-runner:test \
+            bash -c 'REPO_URL=${REPO_URL:-https://github.com/${GITHUB_REPOSITORY}}; echo "REPO_URL: $REPO_URL"'
 
   validate-docs:
     name: Validate Documentation

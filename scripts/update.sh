@@ -108,7 +108,7 @@ echo ""
 for runner in "${RUNNERS[@]}"; do
     echo "Updating $runner..."
 
-    # Get current configuration
+    # Get current configuration for logging/debugging
     # shellcheck disable=SC2034
     REPO_URL=$(docker inspect "$runner" | jq -r '.[0].Config.Env[] | select(startswith("REPO_URL="))' | cut -d= -f2-)
     # shellcheck disable=SC2034
@@ -117,6 +117,10 @@ for runner in "${RUNNERS[@]}"; do
     CPU_LIMIT=$(docker inspect "$runner" | jq -r '.[0].HostConfig.NanoCpus / 1000000000')
     # shellcheck disable=SC2034
     MEMORY_LIMIT=$(docker inspect "$runner" | jq -r '.[0].HostConfig.Memory')
+    
+    # Log current config for debugging
+    echo "  Current config: REPO_URL=${REPO_URL}, LABELS=${LABELS}"
+    echo "  Resources: CPU=${CPU_LIMIT}, Memory=${MEMORY_LIMIT}"
 
     # Stop and remove old container
     docker stop "$runner"
