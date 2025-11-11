@@ -30,8 +30,8 @@ jobs:
         id: get_installation_id
         uses: ./.github/actions/get-installation-id
         with:
-          app_id: ${{ inputs.app_id || secrets.GITHUB_APP_ID }}
-          private_key: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+          app_id: ${{ inputs.app_id || secrets.RUNNER_APP_ID }}
+          private_key: ${{ secrets.RUNNER_PRIVATE_KEY }}
           repository: ${{ inputs.target_repository }}
 
       - name: Display Installation ID
