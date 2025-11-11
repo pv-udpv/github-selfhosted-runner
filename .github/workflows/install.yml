@@ -1,0 +1,61 @@
+name: Installation Workflow
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/setup.sh'
+      - 'scripts/deploy.sh'
+      - 'config/runner.env.template'
+      - 'docker/Dockerfile'
+      - 'docs/installation.md'
+      - '.github/workflows/install.yml'
+
+jobs:
+  preflight-checks:
+    name: "Lint & Validate Files"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Lint INSTALL docs
+        uses: DavidAnson/markdownlint-cli2-action@v16
+        with:
+          globs: '**/installation.md'
+      - name: Validate runner.env template syntax
+        run: |
+          cp config/runner.env.template config/runner.env || true
+          grep -q 'GITHUB_APP_ID=' config/runner.env
+          grep -q 'REPO_URL=' config/runner.env
+      - name: Bash syntax check scripts
+        run: |
+          bash -n scripts/setup.sh
+          bash -n scripts/deploy.sh
+  build-runner-image:
+    name: "Build Docker Runner"
+    needs: preflight-checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Build runner Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./docker
+          file: ./docker/Dockerfile
+          push: false
+          tags: github-selfhosted-runner:test
+      - name: Test image structure
+        run: |
+          docker run --rm github-selfhosted-runner:test /home/runner/bin/Runner.Listener --version
+  validate-setup-script:
+    name: "Setup Script Dry Run"
+    needs: preflight-checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Bash syntax-check setup scripts
+        run: |
+          bash -n scripts/setup.sh
+          bash -n scripts/deploy.sh
