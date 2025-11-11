@@ -1,0 +1,59 @@
+name: Self-Hosted Runner Lifecycle
+on:
+  workflow_dispatch:
+
+jobs:
+  runner_lifecycle:
+    runs-on: [self-hosted, linux]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Context Checkpoint (before mutation)
+        run: scripts/context_manager.sh checkpoint runner
+
+      - name: Install App
+        uses: ./.github/actions/install-app
+        with:
+          app_id: ${{ secrets.GITHUB_APP_ID }}
+          private_key: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+          repository: ${{ github.repository }}
+
+      - name: Validate Config
+        uses: ./.github/actions/validate-config
+        with:
+          config: config/runner.env
+
+      - name: Bootstrap Runner
+        uses: ./.github/actions/bootstrap-runner
+        with:
+          config: config/runner.env
+          runner_name: ${{ env.RUNNER_NAME }}
+
+      - name: Register Runner
+        uses: ./.github/actions/register-runner
+        with:
+          token: ${{ steps.bootstrap.outputs.runner_token }}
+          runner_name: ${{ steps.bootstrap.outputs.runner_name }}
+
+      - name: Export Context Summary
+        run: scripts/context_manager.sh export runner
+
+      - name: Cleanup Runner (stop/remove)
+        if: always()
+        uses: ./.github/actions/cleanup-runner
+        with:
+          runner_id: ${{ steps.register.outputs.runner_id }}
+
+      - name: Uninstall GitHub App (safe)
+        if: always()
+        uses: ./.github/actions/uninstall-app
+        with:
+          app_id: ${{ secrets.GITHUB_APP_ID }}
+          private_key: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+          repository: ${{ github.repository }}
+          cleanup_runners: 'true'
+
+      - name: Context Rollback (on error)
+        if: failure()
+        run: scripts/context_manager.sh rollback runner
