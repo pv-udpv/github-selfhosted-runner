@@ -239,7 +239,7 @@ context_manager_export() {
 #   context_manager_checkpoint runner
 #
 context_manager_checkpoint() {
-  local layer="$1"
+  local layer="${1:-}"
   
   # Validate layer
   if [[ -z "${layer:-}" ]]; then
